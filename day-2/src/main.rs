@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 
@@ -34,11 +33,27 @@ fn record_movements(input_path: &str) -> (i32, i32) {
     let contents =
         File::open(input_path).expect(format!("Error reading file: {}", input_path).as_str());
     let reader = BufReader::new(contents);
-
+    let (mut horizontal, mut depth) = (0, 0);
     for line in reader.lines() {
         let line = line.expect("Failed to parse line from file.");
+        let mut parts: Vec<&str> = line.split(" ").collect();
+        if parts.len() != 2 {
+            panic!("Got unreadable line: {}", line);
+        }
+        let score = parts
+            .pop()
+            .unwrap()
+            .parse::<i32>()
+            .expect("Failed to parse movement size.");
+        let key = parts.pop().unwrap();
+        match key {
+            "forward" => horizontal += score,
+            "up" => depth -= score,
+            "down" => depth += score,
+            _ => panic!("Unknown direction: {}", line),
+        }
     }
-    (0, 0)
+    (horizontal, depth)
 }
 
 /// Parse the file path from command line arguments.
@@ -118,7 +133,7 @@ mod test_record_movements {
 
     #[test]
     fn question_correct_small_window() {
-        assert_eq!(record_movements("inputs/challenge.txt"), (-1, -1));
+        assert_eq!(record_movements("inputs/challenge.txt"), (1845, 916));
     }
 
     #[test]

@@ -61,8 +61,6 @@ fn get_buf_reader(input_path: &str) -> BufReader<File> {
     reader
 }
 
-
-
 #[cfg(test)]
 mod test_get_buf_reader {
     use crate::get_buf_reader;
@@ -111,24 +109,61 @@ mod test_get_buf_reader {
 /// ```
 ///
 /// Considering only the first bit of each number, there are five 0 bits and seven 1 bits. Since the most common bit is 1, the first bit of the gamma rate is 1.
-/// 
+///
 /// The most common second bit of the numbers in the diagnostic report is 0, so the second bit of the gamma rate is 0.
-/// 
+///
 /// The most common value of the third, fourth, and fifth bits are 1, 1, and 0, respectively, and so the final three bits of the gamma rate are 110.
-/// 
+///
 /// So, the gamma rate is the binary number 10110, or 22 in decimal.
-/// 
-/// The epsilon rate is calculated in a similar way; rather than use the most common bit, the least common bit from each position is used. So, the epsilon rate is 01001, or 9 in decimal. 
-/// 
+///
+/// The epsilon rate is calculated in a similar way; rather than use the most common bit, the least common bit from each position is used. So, the epsilon rate is 01001, or 9 in decimal.
+///
 /// Therefore, the we Would produce a final power factors of (22, 9).
 ///
 fn read_power_report(input_path: &str) -> (i32, i32) {
     let reader = get_buf_reader(input_path);
-    let (mut gamma, mut eps) = (0, 0);
+    // Create an array to count zero bits in each number - only two options so if zero is more than half of the lines,
+    // then zero is the most common bit
+    let mut zero_byte_counts = Vec::new();
+    let mut line_count = 0;
     for line in reader.lines() {
+        line_count += 1;
         let line = line.expect("Failed to parse line from file.");
+        for idx in 0..line.len() {
+            let current_byte = line
+                .get(idx..idx + 1)
+                .expect("Failed to parse byte from line");
+
+            // Handle arbitrary length binary numbers in the input file
+            if idx + 1 > zero_byte_counts.len() {
+                zero_byte_counts.push(0);
+            }
+            match current_byte {
+                "0" => zero_byte_counts[idx] += 1,
+                "1" => (),
+                _ => panic!("Unexpected byte: {}", current_byte),
+            }
+        }
     }
-    (gamma, eps)
+
+    // Convert most common bytes to gamma & epsilon
+    let mut gamma: String = String::new();
+    let mut eps: String = String::new();
+    for idx in 0..zero_byte_counts.len() {
+        if zero_byte_counts[idx] > line_count / 2 {
+            gamma.push('0');
+            eps.push('1');
+        } else {
+            gamma.push('1');
+            eps.push('0');
+        }
+    }
+
+    // Convert byte strings to decimal
+    (
+        i32::from_str_radix(gamma.as_str(), 2).expect("Failed to parse byte string as integer"),
+        i32::from_str_radix(eps.as_str(), 2).expect("Failed to parse byte string as integer"),
+    )
 }
 
 /// Record the gamma / epsilon rate of the power report.
@@ -143,15 +178,8 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let input_path = parse_file_path(&args);
     let (x, y) = read_power_report(input_path);
-    println!(
-        "Power rates: ({}, {}), multiplied: {}",
-        x,
-        y,
-        x * y
-    );
+    println!("Power rates: ({}, {}), multiplied: {}", x, y, x * y);
 }
-
-
 
 #[cfg(test)]
 mod test_read_power_report {
@@ -164,6 +192,6 @@ mod test_read_power_report {
 
     #[test]
     fn question_correct() {
-        assert_eq!(read_power_report("inputs/challenge.txt"), (1845, 916));
+        assert_eq!(read_power_report("inputs/challenge.txt"), (654, 3441));
     }
 }

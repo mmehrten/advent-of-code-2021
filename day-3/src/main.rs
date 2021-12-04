@@ -119,16 +119,34 @@ mod test_get_buf_reader {
 /// The epsilon rate is calculated in a similar way; rather than use the most common bit, the least common bit from each position is used. So, the epsilon rate is 01001, or 9 in decimal.
 ///
 /// Therefore, the we Would produce a final power factors of (22, 9).
-///
 fn read_power_report(input_path: &str) -> (i32, i32) {
     let reader = get_buf_reader(input_path);
     // Create an array to count zero bits in each number - only two options so if zero is more than half of the lines,
     // then zero is the most common bit
     let mut zero_byte_counts = Vec::new();
     let mut line_count = 0;
+
+    struct ByteCounter {
+        position: usize,
+        followers: Vec<String>,
+        to_zero: Box<Option<ByteCounter>>,
+        to_one: Box<Option<ByteCounter>>,
+    }
+
+    let mut starting_node = ByteCounter {
+        position: 0,
+        followers: Vec::new(),
+        to_zero: Box::new(None),
+        to_one: Box::new(None),
+    };
     for line in reader.lines() {
         line_count += 1;
         let line = line.expect("Failed to parse line from file.");
+        
+        // TODO: This violates Rust memory management, but moving the starting_node ownership every iteration of the loop.
+        // Unsure how to re-set the starting point each iteration to begin at the top of the graph...
+        // let mut this_node = starting_node;
+
         for idx in 0..line.len() {
             let current_byte = line
                 .get(idx..idx + 1)
@@ -138,11 +156,31 @@ fn read_power_report(input_path: &str) -> (i32, i32) {
             if idx + 1 > zero_byte_counts.len() {
                 zero_byte_counts.push(0);
             }
+
+            // this_node.followers.push(line);
+            let mut new_follower = ByteCounter {
+                position: idx,
+                followers: Vec::new(),
+                to_zero: Box::new(None),
+                to_one: Box::new(None),
+            };
             match current_byte {
-                "0" => zero_byte_counts[idx] += 1,
-                "1" => (),
+                "0" => {
+                    zero_byte_counts[idx] += 1;
+                    // if this_node.to_zero.is_none() {
+                    //     this_node.to_zero = Box::new(Some(new_follower));
+                    // }
+                    // this_node = this_node.to_zero;
+                }
+                "1" => {
+                    // if this_node.to_one.is_none() {
+                    //     this_node.to_one = Box::new(Some(new_follower));
+                    // }
+                    // this_node = this_node.to_one;
+                }
                 _ => panic!("Unexpected byte: {}", current_byte),
             }
+            
         }
     }
 

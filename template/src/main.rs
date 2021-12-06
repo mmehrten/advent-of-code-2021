@@ -95,7 +95,6 @@ mod test_get_buf_reader {
 fn solution(input_path: &str) -> (i32, i32) {
     let reader = get_buf_reader(input_path);
     let lines = reader.lines();
-    let calls = lines.next();
     for line in lines {
         let line = line.expect("Failed to parse line from file.");
     }
@@ -107,7 +106,7 @@ fn solution(input_path: &str) -> (i32, i32) {
 /// Usage:
 ///
 /// ```
-/// $ day-TODO inputs/example.txt
+/// $ aoc inputs/example.txt
 /// TODO
 /// ```
 fn main() {

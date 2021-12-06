@@ -382,7 +382,7 @@ impl Solution {
     }
 }
 
-/// Parse a bingo game as inputs and report a winning board
+/// Parse a bingo game as inputs and report a winning board, as well as the worst-losing board, scores.
 ///
 /// # Arguments
 ///
@@ -390,7 +390,7 @@ impl Solution {
 ///
 /// # Returns
 ///
-/// The score of the winning board.
+/// The score of the winning board and worst-losing board.
 ///
 /// # Examples
 ///
@@ -427,8 +427,8 @@ impl Solution {
 /// *  The sum of all unmarked numbers on the winning board
 /// *  Multiplied by the number that caused the board to win
 ///
-/// So in this case 188 * 24 = 4512.
-fn solution(input_path: &str) -> i32 {
+/// So in this case 188 * 24 = 4512 for the best board, and 148 * 13 = 1924 for the worst
+fn solution(input_path: &str) -> (i32, i32) {
     let reader = get_buf_reader(input_path);
     let mut lines = reader.lines().map(|l| l.unwrap());
     let mut calls: Vec<String> = lines
@@ -505,19 +505,28 @@ fn solution(input_path: &str) -> i32 {
     // All boards are processed, check for the winning board
     let mut best_score = 0;
     let mut best_turn_count: Option<usize> = None;
+    let mut worst_score = 0;
+    let mut worst_turn_count: Option<usize> = None;
     for mut sol in winning_scores {
-        if best_turn_count.is_none() {
+        if best_turn_count.is_none() || worst_turn_count.is_none() {
             best_score = sol.score();
             best_turn_count = Some(sol.rounds_to_win);
+            worst_score = sol.score();
+            worst_turn_count = Some(sol.rounds_to_win);
         }
+
         if sol.rounds_to_win < best_turn_count.unwrap() {
             best_score = sol.score();
             best_turn_count = Some(sol.rounds_to_win);
         }
+        if sol.rounds_to_win > worst_turn_count.unwrap() {
+            worst_score = sol.score();
+            worst_turn_count = Some(sol.rounds_to_win);
+        }
     }
     // TODO: Can we express this as a map / reduce instead?
     // winning_scores.map(|x| x.score()).max().unwrap();
-    best_score
+    (best_score, worst_score)
 }
 
 /// TODO
@@ -541,11 +550,11 @@ mod test_solution {
 
     #[test]
     fn example_correct() {
-        assert_eq!(solution("inputs/example.txt"), 4512);
+        assert_eq!(solution("inputs/example.txt"), (4512, 1924));
     }
 
     #[test]
     fn question_correct() {
-        assert_eq!(solution("inputs/challenge.txt"), 35670);
+        assert_eq!(solution("inputs/challenge.txt"), (35670, 22704));
     }
 }

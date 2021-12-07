@@ -95,11 +95,36 @@ mod test_get_buf_reader {
 /// with a total overall difference of 37 (16 - 2 + ... + 14 - 2).
 fn solution(input_path: &str) -> (i32, i32) {
     let reader = get_buf_reader(input_path);
-    let lines = reader.lines();
-    for line in lines {
-        let line = line.expect("Failed to parse line from file.");
+    let to_align: Vec<i32> = reader
+        .lines()
+        .map(|line| {
+            line.expect("Failed to read line from file")
+                .split(",")
+                .map(|s| s.parse::<i32>().expect("Failed to parse value from file."))
+                .collect::<Vec<i32>>()
+        })
+        .flatten()
+        .collect();
+    let smallest_val = *to_align
+        .iter()
+        .min()
+        .expect("Failed to parse population data");
+    let largest_val = *to_align
+        .iter()
+        .max()
+        .expect("Failed to parse population data");
+    let mut distances: Vec<i32> = Vec::new();
+    for possible_val in smallest_val..largest_val {
+        distances.push(to_align.iter().map(|v| (v - possible_val).abs()).sum());
     }
-    (0, 0)
+    let (mut min_distance, mut closest_val) = (None, 0);
+    for (dist, val) in distances.iter().zip(smallest_val..largest_val) {
+        if min_distance.is_none() || *dist < min_distance.unwrap() {
+            min_distance = Some(*dist);
+            closest_val = val;
+        }
+    }
+    (closest_val, min_distance.unwrap())
 }
 
 /// Output the number that is closest to a given set of numbers
@@ -128,6 +153,6 @@ mod test_solution {
 
     #[test]
     fn question_correct() {
-        assert_eq!(solution("inputs/challenge.txt"), (0, 0));
+        assert_eq!(solution("inputs/challenge.txt"), (329, 340052));
     }
 }

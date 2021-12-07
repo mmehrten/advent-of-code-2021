@@ -115,7 +115,14 @@ fn solution(input_path: &str) -> (i32, i32) {
         .expect("Failed to parse population data");
     let mut distances: Vec<i32> = Vec::new();
     for possible_val in smallest_val..largest_val {
-        distances.push(to_align.iter().map(|v| (v - possible_val).abs()).sum());
+        distances.push(
+            to_align
+                .iter()
+                .map(|v| (v - possible_val).abs())
+                // Cost is the sum of the distance values - e.g. distance 3 cost is 3+2+1 (n * (n+1) / 2)
+                .map(|n| n * (n + 1) / 2)
+                .sum(),
+        );
     }
     let (mut min_distance, mut closest_val) = (None, 0);
     for (dist, val) in distances.iter().zip(smallest_val..largest_val) {
@@ -148,11 +155,11 @@ mod test_solution {
 
     #[test]
     fn example_correct() {
-        assert_eq!(solution("inputs/example.txt"), (2, 37));
+        assert_eq!(solution("inputs/example.txt"), (5, 168));
     }
 
     #[test]
     fn question_correct() {
-        assert_eq!(solution("inputs/challenge.txt"), (329, 340052));
+        assert_eq!(solution("inputs/challenge.txt"), (466, 92948968));
     }
 }

@@ -125,19 +125,16 @@ fn solution(input_path: &str, days: usize) -> usize {
     fn add_key<K, V>(hash_map: &mut HashMap<K, V>, key: K, value: V)
     where
         V: std::ops::Add<Output = V>,
+        V: std::ops::AddAssign,
         K: Eq,
         K: PartialEq,
         K: std::hash::Hash,
         V: Copy,
     {
-        match hash_map.get(&key) {
-            Some(current_val) => {
-                let tmp = hash_map.insert(key, value + *current_val);
-            }
-            _ => {
-                let tmp = hash_map.insert(key, value);
-            }
-        }
+        let _ = *hash_map
+            .entry(key)
+            .and_modify(|v| *v += value)
+            .or_insert(value);
     }
 
     let mut pop_by_time: HashMap<usize, usize> = HashMap::new();
@@ -145,7 +142,7 @@ fn solution(input_path: &str, days: usize) -> usize {
         add_key(&mut pop_by_time, fish_ttr, 1);
     }
 
-    for day in 0..days {
+    for _ in 0..days {
         let mut new_pop: HashMap<usize, usize> = HashMap::new();
         for (ttr, current) in pop_by_time {
             if ttr == 0 {

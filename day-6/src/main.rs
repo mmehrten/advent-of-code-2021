@@ -1,6 +1,6 @@
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-
 /// Parse the file path from command line arguments.
 ///
 /// # Arguments
@@ -77,24 +77,8 @@ mod test_get_buf_reader {
     }
 }
 
-const NEW_FISH_TTR: i32 = 8;
-const OLD_FISH_TTR: i32 = 6;
-
-struct Fish {
-    time_to_reproduce: i32,
-}
-impl Fish {
-    fn age_one(&mut self) -> Option<Fish> {
-        if self.time_to_reproduce == 0 {
-            self.time_to_reproduce = OLD_FISH_TTR;
-            return Some(Fish {
-                time_to_reproduce: NEW_FISH_TTR,
-            });
-        }
-        self.time_to_reproduce -= 1;
-        None
-    }
-}
+const NEW_FISH_TTR: usize = 8;
+const OLD_FISH_TTR: usize = 6;
 
 /// Return the number of lanternfish alive after X days given an initial population.
 ///
@@ -125,32 +109,59 @@ impl Fish {
 /// * After another day, the first lanternfish would have an internal timer of 5, and the second lanternfish would have an internal timer of 7.
 ///
 /// So, given initial ages of 3,4,3,1,2 - in 80 days, the population would be 5934.
-fn solution(input_path: &str, days: usize) -> i32 {
+fn solution(input_path: &str, days: usize) -> usize {
     let reader = get_buf_reader(input_path);
-    let mut population: Vec<Fish> = reader
+    let population: Vec<usize> = reader
         .lines()
         .map(|line| {
             line.expect("Failed to read line from file")
                 .split(",")
-                .map(|s| s.parse::<i32>().expect("Failed to parse age from file."))
-                .map(|t| Fish {
-                    time_to_reproduce: t,
-                })
-                .collect::<Vec<Fish>>()
+                .map(|s| s.parse::<usize>().expect("Failed to parse age from file."))
+                .collect::<Vec<usize>>()
         })
         .flatten()
         .collect();
 
-    for _ in 0..days {
-        for idx in 0..population.len() {
-            let fish = &mut population[idx];
-            match fish.age_one() {
-                Some(new_fish) => population.push(new_fish),
-                _ => (),
+    fn add_key<K, V>(hash_map: &mut HashMap<K, V>, key: K, value: V)
+    where
+        V: std::ops::Add<Output = V>,
+        K: Eq,
+        K: PartialEq,
+        K: std::hash::Hash,
+        V: Copy,
+    {
+        match hash_map.get(&key) {
+            Some(current_val) => {
+                let tmp = hash_map.insert(key, value + *current_val);
+            }
+            _ => {
+                let tmp = hash_map.insert(key, value);
             }
         }
     }
-    population.len() as i32
+
+    let mut pop_by_time: HashMap<usize, usize> = HashMap::new();
+    for fish_ttr in population {
+        add_key(&mut pop_by_time, fish_ttr, 1);
+    }
+
+    for day in 0..days {
+        let mut new_pop: HashMap<usize, usize> = HashMap::new();
+        for (ttr, current) in pop_by_time {
+            if ttr == 0 {
+                // Each fish at ttr 0 reproduces - create this many NEW_FISH
+                add_key(&mut new_pop, NEW_FISH_TTR, current);
+                // Each fish at this new TTR ages out into an OLD_FISH timer
+                add_key(&mut new_pop, OLD_FISH_TTR, current);
+                continue;
+            }
+            // Otherwise, age this population
+            add_key(&mut new_pop, ttr - 1, current);
+        }
+
+        pop_by_time = new_pop;
+    }
+    pop_by_time.values().sum()
 }
 
 /// Print the number of lanternfish 80 days after an initial population.
@@ -164,8 +175,9 @@ fn solution(input_path: &str, days: usize) -> i32 {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let input_path = parse_file_path(&args);
-    let sol = solution(input_path, 80);
-    println!("Number of lanternfish after 80 days: {:?}", sol);
+    let days = 256;
+    let sol = solution(input_path, days);
+    println!("Number of lanternfish after {} days: {:?}", days, sol);
 }
 
 #[cfg(test)]

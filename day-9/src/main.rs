@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Error};
 
@@ -77,11 +78,13 @@ mod test_get_buf_reader {
     }
 }
 
-/// Finds all local minima in an input array of values, and returns the sum of their risk values.
-/// 
+/// Finds all local minima in an input array of values, and returns the sum of their risk values, as well as the product of all basin sizes around the minima.
+///
 /// A local minima is any point in the array that is lower than its adjacent up, down, left, and right points.
-/// 
+///
 /// A risk value is one plus the local minima value.
+///
+/// A basin is all points that lead into a local minima.
 ///
 /// # Arguments
 ///
@@ -94,7 +97,7 @@ mod test_get_buf_reader {
 /// # Examples
 ///
 /// ## Basic
-/// 
+///
 /// The following array has 4 local minima, with a total risk value of 15:
 /// ```
 /// 2199943210 // width 10
@@ -103,7 +106,7 @@ mod test_get_buf_reader {
 /// 8767896789
 /// 9899965678
 /// ```
-fn solution(input_path: &str) -> i32 {
+fn solution(input_path: &str) -> (i32, i32) {
     let reader = get_buf_reader(input_path);
     let mut lines = reader.lines();
     let mut inputs = Vec::new();
@@ -111,11 +114,14 @@ fn solution(input_path: &str) -> i32 {
     // Method used to parse a single iteration of the input file
     let parse_line = |line: Option<Result<String, Error>>| {
         line.expect("Failed to parse line from file.")
-        .expect("Failed to parse line from file.")
-        .split("")
-        .filter(|s| s != &"")
-        .map(|s| s.parse::<i32>().expect("Failed to parse integer from inputs."))
-        .collect::<Vec<i32>>()
+            .expect("Failed to parse line from file.")
+            .split("")
+            .filter(|s| s != &"")
+            .map(|s| {
+                s.parse::<i32>()
+                    .expect("Failed to parse integer from inputs.")
+            })
+            .collect::<Vec<i32>>()
     };
 
     // Parse just the first line to determine the overall width of the inputs
@@ -132,62 +138,93 @@ fn solution(input_path: &str) -> i32 {
         inputs.extend(parse_line(line));
     }
 
+    struct Field {
+        spaces: Vec<i32>,
+        width: usize,
+    }
+    impl Field {
+        /// Return the count of elements in the Field.
+        fn len(&self) -> usize {
+            self.spaces.len()
+        }
+
+        /// Return the value of the field at the given index.
+        fn get(&self, idx: usize) -> i32 {
+            self.spaces[idx]
+        }
+
+        /// Return the indexes of all points adjacent to the given point.
+        fn neighbors(&self, idx: usize) -> Vec<usize> {
+            let mut neighbors = Vec::new();
+            // Check the value above us
+            if idx >= self.width {
+                neighbors.push(idx - self.width);
+            }
+            // Check the value to the left of us
+            if idx % self.width != 0 {
+                neighbors.push(idx - 1);
+            }
+            // Check the value to the right of us
+            if idx % self.width != self.width - 1 {
+                neighbors.push(idx + 1);
+            }
+            // Check the value below us
+            if idx < self.spaces.len() - self.width {
+                neighbors.push(idx + self.width);
+            }
+            neighbors
+        }
+
+        /// Return True if all neighbors of the index are greater than the index, False otherwise.
+        fn is_minima(&self, idx: usize) -> bool {
+            let this_val = self.spaces[idx];
+            for neighbor in self.neighbors(idx) {
+                if this_val >= self.spaces[neighbor] {
+                    return false;
+                }
+            }
+            true
+        }
+
+        /// Return all neighbors of the index that are greater than the given point, up to but not including the value 9.
+        fn ascending_neighbors(&self, idx: usize) -> HashSet<usize> {
+            let mut new_neighbors = HashSet::new();
+            // Make this index a part of the neighbor set
+            new_neighbors.insert(idx);
+
+            // Check all adjacent points
+            let this_val = self.get(idx);
+            for neighbor in self.neighbors(idx) {
+                let next_val = self.get(neighbor);
+                if next_val > this_val && next_val != 9 {
+                    // This is an ascending neighbor, so add it to the set and check its neighbors as well
+                    new_neighbors.extend(self.ascending_neighbors(neighbor));
+                }
+            }
+            new_neighbors
+        }
+    }
+
+    let field = Field {
+        spaces: inputs,
+        width: array_width,
+    };
     // Search every point in the array for local minima
     let mut risk_score = 0;
-    let mut to_write = Vec::new();
-    let mut counted = 0;
-    for idx in 0..inputs.len() {
-        counted += 1;
-        let this_val = &inputs[idx];
-        to_write.push(this_val.to_string());
-
-        // Check the value above us
-        if idx >= array_width {
-            // the value above us is exactly array_width spaces to the left
-            let top_val = &inputs[idx - array_width];
-            if this_val >= top_val {
-                continue;
-            }
-        }
-
-        // Check the value to the left of us
-        if idx % array_width != 0 {
-            let right_val = &inputs[idx - 1];
-            if this_val >= right_val {
-                continue;
-            }
-        }
-        // Check the value to the right of us
-        if idx % array_width != array_width - 1 {
-            let right_val = &inputs[idx + 1];
-            if this_val >= right_val {
-                continue;
-            }
-        }
-
-        // Check the value below us
-        if idx < inputs.len() - array_width  {
-            // the value above us is exactly array_width spaces to the right
-            let bottom_val = &inputs[idx + array_width];
-            if this_val >= bottom_val {
-                continue;
-            }
-        }
-        
-        // We're less than all those points, so this is a local minima
-        risk_score += *this_val + 1;
-        to_write.pop();
-        to_write.push("\x1b[93m".to_string() + this_val.to_string().as_str() + "\x1b[0m");
-    }
-    for idx in 0..to_write.len() {
-        print!("{}", to_write[idx]);
-        if idx % array_width == array_width - 1 {
-            print!("\n");
+    let mut basin_sizes = Vec::new();
+    for idx in 0..field.len() {
+        if field.is_minima(idx) {
+            risk_score += field.get(idx) + 1;
+            let basin = field.ascending_neighbors(idx);
+            basin_sizes.push(basin.len());
         }
     }
-    println!("Array points checked: {}", counted);
-
-    risk_score
+    basin_sizes.sort();
+    basin_sizes.reverse();
+    (
+        risk_score,
+        basin_sizes.iter().take(3).fold(1, |acc, &x| acc * x) as i32,
+    )
 }
 
 /// Print the total risk value of an array.
@@ -211,11 +248,11 @@ mod test_solution {
 
     #[test]
     fn example_correct() {
-        assert_eq!(solution("inputs/example.txt"), 15);
+        assert_eq!(solution("inputs/example.txt"), (15, 1134));
     }
 
     #[test]
     fn question_correct() {
-        assert_eq!(solution("inputs/challenge.txt"), 580);
+        assert_eq!(solution("inputs/challenge.txt"), (580, 856716));
     }
 }

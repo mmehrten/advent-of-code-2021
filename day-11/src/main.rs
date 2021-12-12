@@ -1,7 +1,7 @@
-use std::fs::File;
-use std::io::{BufRead, BufReader};
-use std::io::Error;
 use std::collections::HashSet;
+use std::fs::File;
+use std::io::Error;
+use std::io::{BufRead, BufReader};
 
 /// Parse the file path from command line arguments.
 ///
@@ -85,15 +85,9 @@ struct Field {
 }
 static ACTIVATION_ENERGY: usize = 9;
 impl Field {
-    
     /// Return the count of elements in the Field.
     fn len(&self) -> usize {
         self.spaces.len()
-    }
-
-    /// Return the value of the field at the given index.
-    fn get(&self, idx: usize) -> usize {
-        self.spaces[idx]
     }
 
     /// Return the indexes of all points adjacent to the given point.
@@ -139,35 +133,6 @@ impl Field {
         neighbors
     }
 
-    /// Return True if all neighbors of the index are greater than the index, False otherwise.
-    fn is_minima(&self, idx: usize) -> bool {
-        let this_val = self.spaces[idx];
-        for neighbor in self.neighbors(idx) {
-            if this_val >= self.spaces[neighbor] {
-                return false;
-            }
-        }
-        true
-    }
-
-    /// Return all neighbors of the index that are greater than the given point, up to but not including the value 9.
-    fn ascending_neighbors(&self, idx: usize) -> HashSet<usize> {
-        let mut new_neighbors = HashSet::new();
-        // Make this index a part of the neighbor set
-        new_neighbors.insert(idx);
-
-        // Check all adjacent points
-        let this_val = self.get(idx);
-        for neighbor in self.neighbors(idx) {
-            let next_val = self.get(neighbor);
-            if next_val > this_val && next_val != 9 {
-                // This is an ascending neighbor, so add it to the set and check its neighbors as well
-                new_neighbors.extend(self.ascending_neighbors(neighbor));
-            }
-        }
-        new_neighbors
-    }
-
     /// Parse a line of values into a vector for the field
     fn parse_line(line: Result<String, Error>) -> Vec<usize> {
         line.expect("Failed to parse line from file.")
@@ -184,19 +149,19 @@ impl Field {
     fn parse_line_into(&mut self, line: Result<String, Error>) {
         self.spaces.extend(Field::parse_line(line));
     }
-    
+
     /// Increase the energy of all nodes by one.
     fn increase_total_energy(&mut self) {
         for idx in 0..self.len() {
             self.spaces[idx] += 1;
         }
     }
-    
+
     /// Try to acticate the given node - if it activates, increase neighbors energy and try their activations as well.
     fn try_activate_node(&mut self, idx: usize, activations: &mut HashSet<usize>) {
         // If we've already triggered this node, or it's not ready to trigger, move one
         if self.spaces[idx] <= ACTIVATION_ENERGY || activations.contains(&idx) {
-            return; 
+            return;
         }
 
         // Activate this node, and all adjascent nodes
@@ -216,22 +181,23 @@ impl Field {
         }
     }
 
+    /// Set a node's energy to 0.
     fn deactivate_node(&mut self, idx: usize) {
         self.spaces[idx] = 0;
     }
 }
 
-/// Predict the number of flashes in a population of dumbo octopuses after N iterations.
+/// Predict the number of flashes in a population of dumbo octopuses after N iterations, and the time to flash synchronization.
 ///
 /// Each octopus flashes based on its energy level. The energy level of each octopus is a
 /// value between 0 and 9.
-/// 
+///
 /// The energy levels operate in steps, during a single step, the following occurs:
 ///  
 ///  * First, the energy level of each octopus increases by 1.
-///  * Then, any octopus with an energy level greater than 9 flashes. 
+///  * Then, any octopus with an energy level greater than 9 flashes.
 ///    * This increases the energy level of all adjacent octopuses by 1, including octopuses that are diagonally adjacent.
-///    * If this causes an octopus to have an energy level greater than 9, it also flashes. 
+///    * If this causes an octopus to have an energy level greater than 9, it also flashes.
 ///    * This process continues as long as new octopuses keep having their energy level increased beyond 9. (An octopus can only flash at most once per step.)
 ///  * Finally, any octopus that flashed during this step has its energy level set to 0, as it used all of its energy to flash.
 ///  
@@ -242,15 +208,18 @@ impl Field {
 ///
 /// # Returns
 ///
-/// The total number of flashes after N iterations.
-fn solution(input_path: &str, num_iterations: usize) -> usize {
+/// The total number of flashes after N iterations, as well as the number of iterations it would take to synchronize all flashes at once.
+fn solution(input_path: &str, num_iterations: usize) -> (usize, usize) {
     let reader = get_buf_reader(input_path);
     let mut lines = reader.lines();
     let mut inputs = Vec::new();
     // Parse just the first line to determine the overall width of the inputs
     inputs.extend(Field::parse_line(lines.next().expect("")));
     let array_width = inputs.len();
-    let mut field = Field {width: array_width, spaces: inputs};
+    let mut field = Field {
+        width: array_width,
+        spaces: inputs,
+    };
 
     // Parse the remaining lines
     while let Some(line) = lines.next() {
@@ -258,16 +227,22 @@ fn solution(input_path: &str, num_iterations: usize) -> usize {
     }
 
     let mut activation_count = 0;
-    for _ in 0..num_iterations {
+    let mut step_num = 0;
+    loop {
+        step_num += 1;
         let mut activations = HashSet::new();
         field.increase_total_energy();
         field.try_activate_all(&mut activations);
-        activation_count += activations.len();
+        if step_num <= num_iterations {
+            activation_count += activations.len();
+        }
+        if activations.len() == field.len() {
+            return (activation_count, step_num);
+        }
         for idx in activations {
             field.deactivate_node(idx);
         }
     }
-    activation_count
 }
 
 /// Print the total number of octopi activations after 100 steps, given an input of initial energy levels.
@@ -277,12 +252,17 @@ fn solution(input_path: &str, num_iterations: usize) -> usize {
 /// ```
 /// $ aoc inputs/example.txt
 /// Total activation count after 100 steps: 1656
+/// Steps to flash synchronization: 195
 /// ```
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let input_path = parse_file_path(&args);
-    let sol = solution(input_path, 100);
-    println!("Total activation count after 100 steps: {:?}", sol);
+    let (activation_count, sync_step_count) = solution(input_path, 100);
+    println!(
+        "Total activation count after 100 steps: {:?}",
+        activation_count
+    );
+    println!("Steps to flash synchronization: {:?}", sync_step_count);
 }
 
 #[cfg(test)]
@@ -291,11 +271,11 @@ mod test_solution {
 
     #[test]
     fn example_correct() {
-        assert_eq!(solution("inputs/example.txt", 100), 1656);
+        assert_eq!(solution("inputs/example.txt", 100), (1656, 195));
     }
 
     #[test]
     fn question_correct() {
-        assert_eq!(solution("inputs/challenge.txt", 100), 1613);
+        assert_eq!(solution("inputs/challenge.txt", 100), (1613, 510));
     }
 }

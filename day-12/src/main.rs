@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 /// Parse the file path from command line arguments.
@@ -89,7 +89,6 @@ struct Graph {
     nodes: Vec<Node>,
     adjascency: HashMap<usize, Vec<usize>>,
     starting_node_idx: usize,
-    ending_node_idx: usize,
 }
 
 impl Graph {
@@ -99,7 +98,8 @@ impl Graph {
     /// `start` is the starting node and `end` is the final node.
     /// All edges are bidirectional. Lowercase nodes are taken to be "small" - e.g. can only be visited
     /// once in a traversal. Otherwise, nodes are taken to be "large" and can be visited multiple times
-    /// in a traversal.
+    /// in a traversal. A single small node in a traversal may be visited twice, but all others must be visited
+    /// only once.
     fn from_lines<'a, I>(lines: I) -> Graph
     where
         I: Iterator<Item = Result<String, std::io::Error>>,
@@ -158,8 +158,14 @@ impl Graph {
         }
         let mut adj = HashMap::new();
         for idx in (0..node_names.len()).step_by(2) {
-            let id0 = name_to_id.get(&node_names[idx]).unwrap();
-            let id1 = name_to_id.get(&node_names[idx + 1]).unwrap();
+            let mut id0 = name_to_id.get(&node_names[idx]).unwrap();
+            let mut id1 = name_to_id.get(&node_names[idx + 1]).unwrap();
+            // Always want start -> node relationships, not node -> start relationships
+            if *id1 == starting_node_idx {
+                let tmp_id = id0;
+                id0 = id1;
+                id1 = tmp_id;
+            }
             let _ = adj
                 .entry(*id0)
                 .and_modify(|v: &mut Vec<usize>| v.push(*id1))
@@ -177,7 +183,6 @@ impl Graph {
             nodes: nodes,
             adjascency: adj,
             starting_node_idx: starting_node_idx,
-            ending_node_idx: ending_node_idx,
         }
     }
 
@@ -208,20 +213,25 @@ impl Graph {
     fn get_paths_to_end_dfs(&self) -> usize {
         let mut nodes_to_search = VecDeque::new();
         let mut paths_to_end = 0;
-        nodes_to_search.push_back((self.get(self.starting_node_idx), Vec::new()));
+        nodes_to_search.push_back((self.get(self.starting_node_idx), Vec::new(), false));
 
-        while nodes_to_search.len() > 0 {
-            let (this_node, mut path) = nodes_to_search.pop_front().unwrap();
+        while let Some((this_node, mut path, has_double_small)) = nodes_to_search.pop_front() {
             path.push(this_node.id);
+            if this_node.is_end {
+                paths_to_end += 1;
+                continue;
+            }
+
             for neighbor in self.neighbors(this_node.id) {
-                if neighbor.is_end {
-                    paths_to_end += 1;
+                let has_this_small_neighbor = (!neighbor.is_large) && path.contains(&neighbor.id);
+                if has_double_small && has_this_small_neighbor {
                     continue;
                 }
-                if !neighbor.is_large && path.contains(&neighbor.id) {
-                    continue;
-                }
-                nodes_to_search.push_front((neighbor, path.clone()));
+                nodes_to_search.push_front((
+                    neighbor,
+                    path.clone(),
+                    has_double_small || has_this_small_neighbor,
+                ));
             }
         }
         paths_to_end
@@ -293,16 +303,20 @@ mod test_solution {
 
     #[test]
     fn example_correct() {
-        assert_eq!(solution("inputs/example.txt"), 10);
+        assert_eq!(solution("inputs/example.txt"), 36);
     }
 
     #[test]
+    fn example_medium_correct() {
+        assert_eq!(solution("inputs/example_medium.txt"), 103);
+    }
+    #[test]
     fn example_large_correct() {
-        assert_eq!(solution("inputs/example_large.txt"), 226);
+        assert_eq!(solution("inputs/example_large.txt"), 3509);
     }
 
     #[test]
     fn question_correct() {
-        assert_eq!(solution("inputs/challenge.txt"), 3779);
+        assert_eq!(solution("inputs/challenge.txt"), 96988);
     }
 }

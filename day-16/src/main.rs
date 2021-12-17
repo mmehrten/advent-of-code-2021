@@ -79,7 +79,7 @@ mod test_get_buf_reader {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Packet {
     id: usize,
     version: usize,
@@ -90,7 +90,60 @@ struct Packet {
 }
 
 impl Packet {
-    fn hex() -> HashMap<String, String> {
+    fn comp(&self, others: &Vec<Packet>) -> usize {
+        match self.id {
+            // Sum
+            0 => others.iter().map(|p| p.value.unwrap()).sum::<usize>(),
+            // Product
+            1 => others
+                .iter()
+                .map(|p| p.value.unwrap())
+                .fold(1, |x, y| x * y),
+            // Min
+            2 => others.iter().map(|p| p.value.unwrap()).min().unwrap(),
+            // Max
+            3 => others.iter().map(|p| p.value.unwrap()).max().unwrap(),
+            // Gt
+            5 => {
+                if &others[0].value.unwrap() > &others[1].value.unwrap() {
+                    1
+                } else {
+                    0
+                }
+            }
+            // Lt
+            6 => {
+                if &others[0].value.unwrap() < &others[1].value.unwrap() {
+                    1
+                } else {
+                    0
+                }
+            }
+            // Eq
+            7 => {
+                if &others[0].value.unwrap() == &others[1].value.unwrap() {
+                    1
+                } else {
+                    0
+                }
+            }
+            _ => 0,
+        }
+    }
+}
+struct Literal {
+    value: usize,
+    bits_read: usize,
+}
+
+#[derive(Debug)]
+struct PacketSequence {
+    it: IntoIter<String>,
+}
+
+impl PacketSequence {
+    /// Return a mapping of hexadecimal characters to their base 2 encoding as strings.
+    fn _hex() -> HashMap<String, String> {
         [
             ("0", "0000"),
             ("1", "0001"),
@@ -114,191 +167,204 @@ impl Packet {
         .collect()
     }
 
-    fn parse_to_int(it: &mut IntoIter<String>, take: usize) -> usize {
-        let parts = it.by_ref().take(take).collect::<Vec<String>>();
-        let bytestr = parts.join("");
+    /// Parse an integer from a vector of bits.
+    fn _parse_int(bytes: Vec<String>) -> usize {
+        let bytestr = bytes.join("");
         // println!("Parsed bytes: {}", bytestr);
         usize::from_str_radix(bytestr.as_str(), 2).expect("Failed to parse bytes as int.")
     }
 
-    fn parse_literal(it: &mut IntoIter<String>) -> (usize, usize) {
+    /// Take a single integer of size `take` bytes from the iterator of bits.
+    fn _take_int(&mut self, take: usize) -> usize {
+        let parts = self.it.by_ref().take(take).collect::<Vec<String>>();
+        PacketSequence::_parse_int(parts)
+    }
+
+    /// Take a literal value with 5 bit encoding from the iterator of unknown total size.
+    fn _take_literal(&mut self) -> Literal {
         let mut bits_read = 0;
         let mut has_more_to_read = true;
         let mut target_bits = Vec::new();
         while has_more_to_read {
-            has_more_to_read = Packet::parse_to_int(it, 1) == 1;
-            target_bits.extend(it.by_ref().take(4).collect::<Vec<String>>());
+            has_more_to_read = self._take_int(1) == 1;
+            target_bits.extend(self.it.by_ref().take(4).collect::<Vec<String>>());
             bits_read += 5;
         }
-        let target_size = target_bits.len();
-        (
-            Packet::parse_to_int(&mut target_bits.into_iter(), target_size),
-            bits_read,
-        )
+        Literal {
+            value: PacketSequence::_parse_int(target_bits),
+            bits_read: bits_read,
+        }
     }
 
-    fn parse_packet(it: &mut IntoIter<String>) -> Packet {
+    /// Take a packet out of the PacketSequence.
+    fn _take_packet(&mut self) -> Packet {
         let mut bits_read = 0;
-        let version = Packet::parse_to_int(it, 3);
-        let id = Packet::parse_to_int(it, 3);
-        // println!("Found id {} version {}", id, version);
+        let version = self._take_int(3);
+        let id = self._take_int(3);
         bits_read += 6;
         match id {
             4 => {
-                // println!("Found literal");
-                let (value, read) = Packet::parse_literal(it);
-                bits_read += read;
-                println!(
-                    "Literal: {}/{} value: {}, read: {}",
-                    id, version, value, bits_read
-                );
+                let lit = self._take_literal();
+                bits_read += lit.bits_read;
                 Packet {
                     id: id,
                     version: version,
                     mode: None,
                     sub_packet_size: None,
-                    value: Some(value),
+                    value: Some(lit.value),
                     bits_read: bits_read,
                 }
             }
             _ => {
-                // println!("Found operator");
-                let ptype = Packet::parse_to_int(it, 1);
-                if ptype == 0 {
-                    let size = Packet::parse_to_int(it, 15);
-                    println!(
-                        "Operator0: {}/{} size: {}, read: {}",
-                        id, version, size, bits_read
-                    );
-                    Packet {
-                        id: id,
-                        version: version,
-                        mode: Some(0),
-                        sub_packet_size: Some(size),
-                        value: None,
-                        bits_read: bits_read + 16,
-                    }
-                } else {
-                    let size = Packet::parse_to_int(it, 11);
-                    println!(
-                        "Operator1: {}/{} size: {}, read: {}",
-                        id, version, size, bits_read
-                    );
-                    Packet {
-                        id: id,
-                        version: version,
-                        mode: Some(1),
-                        sub_packet_size: Some(size),
-                        value: None,
-                        bits_read: bits_read + 12,
-                    }
+                let ptype = self._take_int(1);
+                let to_read = if ptype == 0 { 15 } else { 11 };
+                let size = self._take_int(to_read);
+                bits_read += to_read + 1;
+                Packet {
+                    id: id,
+                    version: version,
+                    mode: Some(ptype),
+                    sub_packet_size: Some(size),
+                    value: None,
+                    bits_read: bits_read,
                 }
             }
         }
     }
 
-    fn parse_mode0(it: &mut IntoIter<String>, size: usize) -> usize {
-        // println!("Parsing mode 0 packet of size: {} bits", size);
+    /// Take all of the packets that a mode 0 packet contains.
+    fn _take_mode_0_packets(&mut self, parent: &Packet) -> (usize, Vec<Packet>) {
+        let size = parent.sub_packet_size.unwrap();
         let mut to_read = size;
-        let mut version_sum = 0;
+        let mut packets = Vec::new();
+        let mut comp_packets = Vec::new();
         while to_read > 0 {
-            let p = Packet::parse_packet(it);
-            // println!("Read bits parsing packet: {} out of {}", p.bits_read, to_read);
+            let p = self._take_packet();
+            let mode = p.mode;
             to_read -= p.bits_read;
-            version_sum += p.version;
-        }
-        version_sum
-    }
-
-    fn parse_mode1(it: &mut IntoIter<String>, size: usize) -> usize {
-        let mut version_sum = 0;
-        for _ in 0..size {
-            let p = Packet::parse_packet(it);
-            version_sum += p.version;
-            // If this packet contains operator packets, then parse these sub-packets as well
-            match p.mode {
-                Some(0) => version_sum += Packet::parse_mode0(it, p.sub_packet_size.unwrap()),
-                Some(1) => version_sum += Packet::parse_mode1(it, p.sub_packet_size.unwrap()),
-                _ => (),
+            packets.push(p.clone());
+            match mode {
+                Some(0) => {
+                    let (value, sub_pack) = self._take_mode_0_packets(&p);
+                    to_read -= sub_pack.iter().map(|p| p.bits_read).sum::<usize>();
+                    packets.extend(sub_pack);
+                    // Create a fake top level packet for comparison with parent
+                    comp_packets.push(Packet {
+                        id: 999,
+                        value: Some(value),
+                        version: 999,
+                        mode: None,
+                        sub_packet_size: None,
+                        bits_read: 0,
+                    });
+                }
+                Some(1) => {
+                    let (value, sub_pack) = self._take_mode_1_packets(&p);
+                    to_read -= sub_pack.iter().map(|p| p.bits_read).sum::<usize>();
+                    packets.extend(sub_pack);
+                    // Create a fake top level packet for comparison with parent
+                    comp_packets.push(Packet {
+                        id: 999,
+                        value: Some(value),
+                        version: 999,
+                        mode: None,
+                        sub_packet_size: None,
+                        bits_read: 0,
+                    });
+                }
+                _ => comp_packets.push(p),
             }
         }
-        version_sum
+        (parent.comp(&comp_packets), packets)
     }
 
-    fn from_line(line: String) -> usize {
-        let hex = Packet::hex();
-        let bits = line
+    /// Take all of the packets that a mode 1 packet contains.
+    fn _take_mode_1_packets(&mut self, parent: &Packet) -> (usize, Vec<Packet>) {
+        let size = parent.sub_packet_size.unwrap();
+        let mut packets = Vec::new();
+        let mut comp_packets = Vec::new();
+        for _ in 0..size {
+            let p = self._take_packet();
+            let mode = p.mode;
+            packets.push(p.clone());
+            // If this packet contains operator packets, then parse these sub-packets as well
+            match mode {
+                Some(0) => {
+                    let (value, sub_pack) = self._take_mode_0_packets(&p);
+                    packets.extend(sub_pack);
+                    // Create a fake top level packet for comparison with parent
+                    comp_packets.push(Packet {
+                        id: 999,
+                        value: Some(value),
+                        version: 999,
+                        mode: None,
+                        sub_packet_size: None,
+                        bits_read: 0,
+                    });
+                }
+                Some(1) => {
+                    let (value, sub_pack) = self._take_mode_1_packets(&p);
+                    packets.extend(sub_pack);
+                    // Create a fake top level packet for comparison with parent
+                    comp_packets.push(Packet {
+                        id: 999,
+                        value: Some(value),
+                        version: 999,
+                        mode: None,
+                        sub_packet_size: None,
+                        bits_read: 0,
+                    });
+                }
+                _ => {
+                    println!("Mode 1 containing literal");
+                    comp_packets.push(p)
+                }
+            }
+        }
+        println!("Mode 1 comp len: {}", comp_packets.len());
+        (parent.comp(&comp_packets), packets)
+    }
+
+    /// Parse all of the packets that are contained in a hex encoded string.
+    fn new(hex: String) -> PacketSequence {
+        let hex_mapping = PacketSequence::_hex();
+        let bits = hex
             .split("")
             .filter(|s| s != &"")
-            .flat_map(|c| hex.get(c).unwrap().split(""))
+            .flat_map(|c| hex_mapping.get(c).unwrap().split(""))
             // .map(|b| if b == "0" {false} else {true})
             .filter(|s| s != &"")
             .map(|c| c.to_string())
             .collect::<Vec<String>>();
+        PacketSequence {
+            it: bits.into_iter(),
+        }
+    }
 
-        println!("Bits total: {}", bits.len());
-        let mut bits = bits.into_iter();
-        let p = Packet::parse_packet(&mut bits);
-        let version_sum = {
-            match p.mode {
-                None => p.version,
-                Some(0) => p.version + Packet::parse_mode0(&mut bits, p.sub_packet_size.unwrap()),
-                Some(1) => p.version + Packet::parse_mode1(&mut bits, p.sub_packet_size.unwrap()),
-                _ => 0,
+    /// Take all packets out of the PacketSequence and evaluate their total value.
+    fn evaluate(&mut self) -> usize {
+        let parent = self._take_packet();
+        match parent.mode {
+            Some(0) => {
+                let (val, _) = self._take_mode_0_packets(&parent);
+                val
             }
-        };
-        println!("Total version sum: {}", version_sum);
-        version_sum
+            Some(1) => {
+                let (val, _) = self._take_mode_1_packets(&parent);
+                val
+            }
+            _ => parent.value.unwrap(),
+        }
     }
 }
-/// Parse a packet of binary into hex:
-///
-/// Packet structure:
-///
-/// * All numbers are encoded as binary with the most significant bit first
-///   * For example, 100 represents the number 4
-/// * Header:
-///   * Three bits for the packet version (int)
-///   * Three bits for the packet type ID (int)
-/// * ID 4: a literal value
-///   * A single binary number
-///   * Number is padded with leading zeroes until its length is a multiple of four bits
-///   * Then it is broken into groups of four bits
-///   * Each group is prefixed by a 1 bit except the last group, which is prefixed by a 0 bit.
-///   * These groups of five bits immediately follow the packet header
-///   * For example, the hexadecimal string D2FE28 becomes:
-///     110 - version
-///     100 - ID = 4
-///     10111 - First number
-///     11110 - Second number
-///     00101 - Last number
-///     000 - Padding
-/// * All other IDs represent an operator
-///   * An operator packet contains one or more packets.
-///   * An operator packet can use one of two modes indicated by the bit immediately after the packet header
-///   * Mode 0: The next 15 bits are a number that represents the total length in bits of the sub-packets contained by this packet.
-///   * Mode 1: The next 11 bits are a number that represents the number of sub-packets immediately contained by this packet.
-///   * For example, the hexadecimal string 38006F45291200 becomes:
-///     001 - version
-///     110 - ID - 6
-///     0 - Mode 0
-///     000000000011011 - Sub packet is 27 bits
-///     110 - Version
-///     100 - ID = 4
-///     01010 - First/last number
-///     010 - Version
-///     100 - ID = 4
-///     10001 - First number
-///     00100 - Last number / end of sub-packet
-///     0000000 - Padding
-///
+/// Parse a packet of binary into hex, using an unnecessarily complex encoding scheme.
 /// # Arguments
 ///
 /// * `input_path` - The input file path containing the packets to parse.
 ///
 /// # Returns
 ///
-/// The sum of all version numbers in the packets.
+/// The evaluated packet data.
 fn solution(input_path: &str) -> Vec<usize> {
     get_buf_reader(input_path)
         .lines()
@@ -306,7 +372,8 @@ fn solution(input_path: &str) -> Vec<usize> {
             let line = line.expect("Failed to parse line from file.");
             println!("----------------");
             println!("Starting hex: {}", line);
-            Packet::from_line(line)
+            let mut seq = PacketSequence::new(line);
+            seq.evaluate()
         })
         .collect::<Vec<usize>>()
 }
@@ -323,7 +390,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let input_path = parse_file_path(&args);
     let sol = solution(input_path);
-    println!("Packet version sums: {:?}", sol);
+    println!("Evaluated packets: {:?}", sol);
 }
 
 #[cfg(test)]
@@ -334,12 +401,12 @@ mod test_solution {
     fn example_correct() {
         assert_eq!(
             solution("inputs/example.txt"),
-            vec![6, 9, 14, 16, 12, 23, 31]
+            vec![2021, 1, 3, 15, 46, 46, 54],
         );
     }
 
     #[test]
     fn question_correct() {
-        assert_eq!(solution("inputs/challenge.txt"), vec![852]);
+        assert_eq!(solution("inputs/challenge.txt"), vec![19348959966392]);
     }
 }
